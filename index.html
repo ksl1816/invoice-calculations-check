@@ -1,0 +1,725 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Invoice Verification Check</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+    color: #1e293b;
+    min-height: 100vh;
+    padding: 20px;
+  }
+
+  /* ── loader / control bar ── */
+  .ctrl-bar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 14px 18px; margin-bottom: 18px;
+    background: #ffffff; border: 1px solid #bfdbfe; border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.06);
+  }
+  .load-btn {
+    padding: 9px 22px; border: none; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 700;
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: #fff; white-space: nowrap;
+    transition: all .15s; box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
+  }
+  .load-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(37, 99, 235, 0.35); }
+  .load-btn:disabled { opacity: .45; cursor: not-allowed; }
+  .progress-wrap { flex: 1; min-width: 120px; height: 6px; background: #dbeafe; border-radius: 3px; overflow: hidden; }
+  .progress-bar  { height: 100%; width: 0%; background: linear-gradient(90deg, #3b82f6, #2563eb); border-radius: 3px; transition: width .25s; }
+  .status-text   { font-size: 12px; color: #475569; white-space: nowrap; font-weight: 500; }
+  .error-box {
+    color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca;
+    border-radius: 10px; padding: 14px 18px; font-size: 13px; margin-bottom: 16px;
+  }
+
+  /* ── header ── */
+  .page-header {
+    display: flex; align-items: center; gap: 14px;
+    padding: 20px 24px; margin-bottom: 18px;
+    background: linear-gradient(135deg, #ffffff 0%, #f0f9ff 100%);
+    border: 1px solid #bfdbfe; border-radius: 14px;
+    box-shadow: 0 2px 10px rgba(37, 99, 235, 0.08);
+  }
+  .page-header .icon {
+    width: 48px; height: 48px; border-radius: 12px;
+    background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 24px; box-shadow: 0 4px 10px rgba(37, 99, 235, 0.3);
+  }
+  .page-header h1 { font-size: 20px; font-weight: 700; color: #1e3a8a; }
+  .page-header p { font-size: 13px; color: #475569; margin-top: 2px; }
+
+  /* ── filter / summary ── */
+  .filter-card {
+    background: #ffffff; border: 1px solid #bfdbfe; border-radius: 12px;
+    padding: 16px 18px; margin-bottom: 18px;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.06);
+    display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end;
+  }
+  .filter-card .field { display: flex; flex-direction: column; gap: 4px; }
+  .filter-card label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: #1d4ed8; }
+  .filter-card input[type="date"], .filter-card select {
+    padding: 7px 10px; border: 1px solid #bfdbfe; border-radius: 7px; background: #f8fafc;
+    font-size: 13px; color: #1e293b; outline: none; transition: all .15s;
+  }
+  .filter-card input[type="date"]:focus, .filter-card select:focus { border-color: #3b82f6; background: #fff; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); }
+  .filter-card .apply-btn {
+    padding: 8px 18px; border: none; border-radius: 7px; cursor: pointer; font-size: 13px; font-weight: 700;
+    background: #1d4ed8; color: #fff; transition: background .15s;
+  }
+  .filter-card .apply-btn:hover { background: #1e40af; }
+  .filter-card .reset-btn {
+    padding: 8px 16px; border: 1px solid #bfdbfe; border-radius: 7px; cursor: pointer; font-size: 13px; font-weight: 600;
+    background: #fff; color: #1d4ed8;
+  }
+  .filter-card .reset-btn:hover { background: #eff6ff; }
+
+  /* ── stats grid ── */
+  .stats-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 14px; margin-bottom: 18px;
+  }
+  .stat-card {
+    background: #fff; border: 1px solid #bfdbfe; border-radius: 12px;
+    padding: 16px 18px; box-shadow: 0 2px 8px rgba(37, 99, 235, 0.06);
+    position: relative; overflow: hidden;
+  }
+  .stat-card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    background: linear-gradient(90deg, #3b82f6, #1d4ed8);
+  }
+  .stat-card.ok::before    { background: linear-gradient(90deg, #10b981, #059669); }
+  .stat-card.bad::before   { background: linear-gradient(90deg, #ef4444, #dc2626); }
+  .stat-card.total::before { background: linear-gradient(90deg, #8b5cf6, #7c3aed); }
+  .stat-card .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #64748b; font-weight: 700; }
+  .stat-card .val { font-size: 26px; font-weight: 700; color: #1e3a8a; margin-top: 6px; }
+  .stat-card.ok .val  { color: #059669; }
+  .stat-card.bad .val { color: #dc2626; }
+  .stat-card .sub { font-size: 11px; color: #94a3b8; margin-top: 3px; }
+
+  /* ── invoices table ── */
+  .table-card {
+    background: #fff; border: 1px solid #bfdbfe; border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.06); overflow: hidden;
+  }
+  .table-header {
+    padding: 14px 18px; border-bottom: 1px solid #dbeafe;
+    display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;
+    background: linear-gradient(135deg, #f0f9ff, #eff6ff);
+  }
+  .table-header h2 { font-size: 15px; font-weight: 700; color: #1e3a8a; }
+  .view-toggle { display: flex; gap: 6px; }
+  .view-toggle button {
+    padding: 6px 12px; border: 1px solid #bfdbfe; background: #fff; color: #1d4ed8;
+    border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all .12s;
+  }
+  .view-toggle button.active { background: #1d4ed8; color: #fff; border-color: #1d4ed8; }
+  .view-toggle button:hover:not(.active) { background: #eff6ff; }
+
+  .tbl-wrap { overflow-x: auto; max-height: 65vh; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead { position: sticky; top: 0; background: #f0f9ff; z-index: 2; }
+  th {
+    text-align: left; padding: 10px 14px; font-weight: 700; color: #1e3a8a;
+    font-size: 11px; text-transform: uppercase; letter-spacing: .4px;
+    border-bottom: 2px solid #bfdbfe; white-space: nowrap;
+  }
+  th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tbody tr { border-bottom: 1px solid #f1f5f9; transition: background .1s; }
+  tbody tr:hover { background: #f0f9ff; }
+  td { padding: 10px 14px; color: #334155; vertical-align: top; }
+  td.ref { font-weight: 600; color: #1e3a8a; }
+  td.date { white-space: nowrap; color: #64748b; font-size: 12px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700;
+  }
+  .badge.ok { background: #d1fae5; color: #065f46; }
+  .badge.bad { background: #fee2e2; color: #991b1b; }
+  .diff-cell { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .diff-cell.bad { color: #dc2626; }
+  .diff-cell.ok  { color: #059669; }
+
+  /* expandable line rows */
+  .lines-row { background: #f8fafc; }
+  .lines-row td { padding: 0; }
+  .lines-inner { padding: 12px 18px 14px 32px; }
+  .lines-inner table { background: #fff; border: 1px solid #e0e7ff; border-radius: 8px; overflow: hidden; }
+  .lines-inner th { background: #eff6ff; font-size: 10px; padding: 8px 10px; }
+  .lines-inner td { padding: 8px 10px; font-size: 12px; }
+  .expand-btn {
+    background: none; border: none; cursor: pointer; color: #1d4ed8; font-size: 14px;
+    padding: 2px 6px; border-radius: 4px;
+  }
+  .expand-btn:hover { background: #dbeafe; }
+
+  .empty-state {
+    padding: 60px 20px; text-align: center; color: #64748b;
+  }
+  .empty-state .icon-big { font-size: 48px; margin-bottom: 12px; opacity: .5; }
+  .empty-state h3 { font-size: 16px; font-weight: 700; color: #1e3a8a; margin-bottom: 6px; }
+  .empty-state p { font-size: 13px; }
+
+  .legend {
+    display: flex; gap: 16px; font-size: 11px; color: #64748b; align-items: center;
+  }
+  .legend-item { display: flex; align-items: center; gap: 5px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .legend-dot.ok { background: #10b981; }
+  .legend-dot.bad { background: #ef4444; }
+
+  @media (max-width: 640px) {
+    body { padding: 12px; }
+    .page-header { padding: 14px 16px; }
+    .page-header h1 { font-size: 16px; }
+    th, td { padding: 8px 10px; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Page header -->
+<div class="page-header">
+  <div class="icon">✓</div>
+  <div>
+    <h1>Invoice Verification Check</h1>
+    <p>Cross-verify sales invoice totals — custom fields vs. qty × unit price + tax</p>
+  </div>
+</div>
+
+<!-- Control bar -->
+<div class="ctrl-bar">
+  <button class="load-btn" id="load-btn" onclick="loadAllRecords()">⬇ Load All Records</button>
+  <div class="progress-wrap"><div class="progress-bar" id="prog-bar"></div></div>
+  <span class="status-text" id="status-text">Press Load to fetch data from Manager</span>
+</div>
+
+<!-- App body -->
+<div id="app"></div>
+
+<script>
+/* ══════════════════════════════════════════════
+   postMessage helper — DO NOT MODIFY
+══════════════════════════════════════════════ */
+function postMessageWithResponse(message) {
+  return new Promise((resolve, reject) => {
+    const requestId = crypto.randomUUID();
+    const timer = setTimeout(() => {
+      window.removeEventListener('message', handler);
+      reject(new Error('Timeout — is this running inside Manager?'));
+    }, 15000);
+    function handler(event) {
+      if (event.data?.type?.endsWith('-response') && event.data?.requestId === requestId) {
+        clearTimeout(timer);
+        window.removeEventListener('message', handler);
+        resolve(event.data.body);
+      }
+    }
+    window.addEventListener('message', handler);
+    window.parent.postMessage({ ...message, requestId }, '*');
+  });
+}
+
+/* ══════════════════════════════════════════════
+   getBatchSalesInvoice — fetches ALL pages automatically
+══════════════════════════════════════════════ */
+async function getBatchSalesInvoice(onProgress) {
+  const allItems = [];
+  let nextToken  = null;
+  let pageNum    = 0;
+  let apiTotal   = null;
+
+  do {
+    const path = nextToken
+      ? '/api4/batch-sales-invoice?PageSize=99999&next_page_token=' + encodeURIComponent(nextToken)
+      : '/api4/batch-sales-invoice?PageSize=99999';
+
+    const data = await postMessageWithResponse({ type: 'api-request', method: 'GET', path });
+
+    const page = Array.isArray(data) ? data : (data.items || []);
+    allItems.push(...page);
+
+    nextToken = data.next_page_token || data.nextPageToken
+      || data._links?.next?.href || null;
+
+    if (apiTotal === null) {
+      apiTotal = data.totalCount ?? data.total ?? data.count
+        ?? data._metadata?.totalCount ?? null;
+    }
+
+    pageNum++;
+    if (onProgress) onProgress(allItems.length, apiTotal, pageNum);
+
+    if (pageNum >= 1000) break;
+
+  } while (nextToken);
+
+  return allItems;
+}
+
+/* ══════════════════════════════════════════════
+   loadAllRecords — wired to the Load button
+══════════════════════════════════════════════ */
+async function loadAllRecords() {
+  const btn    = document.getElementById('load-btn');
+  const bar    = document.getElementById('prog-bar');
+  const status = document.getElementById('status-text');
+  const app    = document.getElementById('app');
+
+  btn.disabled = true;
+  btn.textContent = 'Loading…';
+  bar.style.width = '0%';
+  app.innerHTML = '';
+
+  try {
+    const items = await getBatchSalesInvoice((loaded, total, page) => {
+      status.textContent = total
+        ? `Page ${page} · ${loaded.toLocaleString()} / ${total.toLocaleString()} records`
+        : `Page ${page} · ${loaded.toLocaleString()} records loaded…`;
+      if (total) bar.style.width = Math.min(95, Math.round(loaded / total * 100)) + '%';
+    });
+
+    bar.style.width = '100%';
+    status.textContent = `✓ ${items.length.toLocaleString()} records loaded`;
+    btn.textContent = '↺ Reload';
+    btn.disabled = false;
+
+    render(items);
+
+  } catch (err) {
+    status.textContent = '⚠ ' + err.message;
+    btn.textContent = '↺ Retry';
+    btn.disabled = false;
+    app.innerHTML = `<div class="error-box">⚠ ${err.message}<br><small>Make sure this extension is running inside Manager.io</small></div>`;
+  }
+}
+
+/* ══════════════════════════════════════════════
+   HELPERS — formatting and calculations
+══════════════════════════════════════════════ */
+
+// Custom field UUIDs (from schema)
+const CF_QTY_ID   = '22558001-f3c8-42d5-9387-0863146beb9d';  // custom quantity
+const CF_RATE_ID  = '48b4e636-d218-4858-8c5e-e17cfc8f320d';  // custom per-unit rate
+
+// Rounding tolerance — treat differences under this as equal (floating point / rounding)
+const TOLERANCE = 0.01;
+
+// Approximate Pakistan GST rate — Manager itself provides taxAmount when computed,
+// but for invoices where taxAmount is null we need to infer. We use per-line detection:
+// if taxCode is present we treat tax as proportional. See computeLineTax below.
+
+const fmt = v => (v == null || isNaN(v) ? '0.00' : Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+const fmtDate = iso => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: '2-digit' });
+};
+const toISODate = iso => {
+  if (!iso) return '';
+  return String(iso).slice(0, 10);
+};
+
+/**
+ * For each line compute:
+ *   methodA = customQty * customRate         (+ line tax share)
+ *   methodB = salesQty  * salesUnitPrice     (+ line tax share)
+ * Tax on each line: if line.taxAmount is present use it; otherwise derive from
+ * invoice-level taxes we can see. In Manager data when taxCode exists and
+ * taxAmount is null we treat "tax" as identical for both methods (they share
+ * the same tax code) — but tax DEPENDS on the base, so we compute tax for
+ * each method separately using the line's taxCode.
+ *
+ * Because a taxCode UUID alone doesn't tell us the %, we infer the effective
+ * rate from any line in the dataset where BOTH base (totalBeforeTax) and
+ * taxAmount are present for the same taxCode. If no sample is available we
+ * fall back to 0% tax (treating the line as untaxed).
+ */
+function buildTaxRateMap(items) {
+  const map = new Map();
+  for (const rec of items) {
+    const lines = rec?.item?.lines || [];
+    for (const ln of lines) {
+      const code = ln?.taxCode;
+      const base = ln?.totalBeforeTax;
+      const tax  = ln?.taxAmount;
+      if (code && base && tax != null && base > 0) {
+        if (!map.has(code)) map.set(code, tax / base);
+      }
+    }
+  }
+  return map;
+}
+
+function computeInvoice(rec, taxRateMap) {
+  const inv = rec?.item || {};
+  const lines = inv.lines || [];
+  let sumA = 0, sumB = 0, sumTaxA = 0, sumTaxB = 0;
+  const lineResults = [];
+
+  for (const ln of lines) {
+    const customQty  = Number(ln?.customFields2?.decimals?.[CF_QTY_ID]  ?? 0);
+    const customRate = Number(ln?.customFields2?.decimals?.[CF_RATE_ID] ?? 0);
+    const qty        = Number(ln?.qty ?? 0);
+    const unitPrice  = Number(ln?.salesUnitPrice ?? 0);
+    const discPct    = Number(ln?.discountPercentage ?? 0);
+    const discAmt    = Number(ln?.discountAmount ?? 0);
+
+    // Base totals before tax for each calculation method
+    let baseA = customQty * customRate;
+    let baseB = qty * unitPrice;
+
+    // Apply line-level discount (both methods treat discount the same way)
+    if (discPct) {
+      baseA = baseA * (1 - discPct / 100);
+      baseB = baseB * (1 - discPct / 100);
+    } else if (discAmt) {
+      baseA = baseA - discAmt;
+      baseB = baseB - discAmt;
+    }
+
+    // Tax — use provided taxAmount if available, else derive from rate map
+    const taxCode = ln?.taxCode;
+    const lineTax = ln?.taxAmount;
+    let taxA = 0, taxB = 0;
+    if (lineTax != null) {
+      // Tax provided by Manager — applies to method B (since Manager computed it from qty*price)
+      taxB = Number(lineTax);
+      // Pro-rate for method A based on its base
+      taxA = baseB > 0 ? (taxB / baseB) * baseA : 0;
+    } else if (taxCode && taxRateMap.has(taxCode)) {
+      const rate = taxRateMap.get(taxCode);
+      taxA = baseA * rate;
+      taxB = baseB * rate;
+    }
+
+    sumA += baseA; sumB += baseB;
+    sumTaxA += taxA; sumTaxB += taxB;
+
+    lineResults.push({
+      desc: ln?.lineDescription || '—',
+      customQty, customRate, qty, unitPrice,
+      baseA, baseB, taxA, taxB,
+      totalA: baseA + taxA,
+      totalB: baseB + taxB,
+      diff: (baseA + taxA) - (baseB + taxB)
+    });
+  }
+
+  const totalA = sumA + sumTaxA;
+  const totalB = sumB + sumTaxB;
+  const diff = totalA - totalB;
+  const isMatch = Math.abs(diff) < TOLERANCE;
+
+  return {
+    key: rec?.key,
+    reference: inv.reference || '—',
+    issueDate: inv.issueDate || null,
+    customer: inv.customer || null,
+    billingAddress: inv.billingAddress || '',
+    baseA: sumA, baseB: sumB,
+    taxA: sumTaxA, taxB: sumTaxB,
+    totalA, totalB, diff, isMatch,
+    lines, lineResults,
+  };
+}
+
+/* ══════════════════════════════════════════════
+   render(items) — main UI
+══════════════════════════════════════════════ */
+function render(items) {
+  const app = document.getElementById('app');
+
+  // Empty state guard
+  if (!items || items.length === 0) {
+    app.innerHTML = `
+      <div class="table-card">
+        <div class="empty-state">
+          <div class="icon-big">📄</div>
+          <h3>No sales invoices found</h3>
+          <p>Your Manager.io business has no sales invoices yet.</p>
+        </div>
+      </div>`;
+    return;
+  }
+
+  // Build tax rate map so we can derive tax when taxAmount is null
+  const taxRateMap = buildTaxRateMap(items);
+
+  // Compute verification for every invoice
+  const verified = items.map(rec => computeInvoice(rec, taxRateMap));
+
+  // Determine date range bounds for the date pickers
+  const dates = verified.map(v => v.issueDate).filter(Boolean).sort();
+  const minDate = dates.length ? toISODate(dates[0]) : '';
+  const maxDate = dates.length ? toISODate(dates[dates.length - 1]) : '';
+
+  // Initial layout
+  app.innerHTML = `
+    <!-- Filter card -->
+    <div class="filter-card">
+      <div class="field">
+        <label for="date-from">From date</label>
+        <input type="date" id="date-from" value="${minDate}">
+      </div>
+      <div class="field">
+        <label for="date-to">To date</label>
+        <input type="date" id="date-to" value="${maxDate}">
+      </div>
+      <div class="field">
+        <label for="status-filter">Status</label>
+        <select id="status-filter">
+          <option value="all">All invoices</option>
+          <option value="ok">✓ Correct only</option>
+          <option value="bad">✗ Incorrect only</option>
+        </select>
+      </div>
+      <button class="apply-btn" id="apply-btn">Apply Filters</button>
+      <button class="reset-btn" id="reset-btn">Reset</button>
+      <div class="legend" style="margin-left:auto">
+        <div class="legend-item"><span class="legend-dot ok"></span>Match</div>
+        <div class="legend-item"><span class="legend-dot bad"></span>Mismatch</div>
+      </div>
+    </div>
+
+    <!-- Stats grid -->
+    <div class="stats-grid" id="stats-grid"></div>
+
+    <!-- Invoices table -->
+    <div class="table-card">
+      <div class="table-header">
+        <h2 id="tbl-title">Invoices</h2>
+        <div class="view-toggle">
+          <button data-view="all" class="active">All</button>
+          <button data-view="bad">Mismatched</button>
+          <button data-view="ok">Matched</button>
+        </div>
+      </div>
+      <div class="tbl-wrap" id="tbl-wrap"></div>
+    </div>
+  `;
+
+  const dateFromEl = document.getElementById('date-from');
+  const dateToEl   = document.getElementById('date-to');
+  const statusEl   = document.getElementById('status-filter');
+  const applyBtn   = document.getElementById('apply-btn');
+  const resetBtn   = document.getElementById('reset-btn');
+
+  // Current filter state
+  let current = [...verified];
+
+  function applyFilters() {
+    const from = dateFromEl.value;
+    const to   = dateToEl.value;
+    const stat = statusEl.value;
+
+    current = verified.filter(v => {
+      const d = toISODate(v.issueDate);
+      if (from && d && d < from) return false;
+      if (to   && d && d > to)   return false;
+      if (stat === 'ok'  && !v.isMatch) return false;
+      if (stat === 'bad' &&  v.isMatch) return false;
+      return true;
+    });
+
+    // reset view toggle to "All" whenever main filters change
+    document.querySelectorAll('.view-toggle button').forEach(b => {
+      b.classList.toggle('active', b.dataset.view === 'all');
+    });
+
+    renderStatsAndTable(current, 'all');
+  }
+
+  function resetFilters() {
+    dateFromEl.value = minDate;
+    dateToEl.value   = maxDate;
+    statusEl.value   = 'all';
+    applyFilters();
+  }
+
+  applyBtn.addEventListener('click', applyFilters);
+  resetBtn.addEventListener('click', resetFilters);
+
+  // View toggle (All / Mismatched / Matched on top of existing filtered set)
+  document.querySelectorAll('.view-toggle button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.view-toggle button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderStatsAndTable(current, btn.dataset.view);
+    });
+  });
+
+  // Initial render
+  renderStatsAndTable(current, 'all');
+}
+
+/* Render stats + table for a given filtered array */
+function renderStatsAndTable(list, view) {
+  const statsGrid = document.getElementById('stats-grid');
+  const tblWrap   = document.getElementById('tbl-wrap');
+  const tblTitle  = document.getElementById('tbl-title');
+
+  const total = list.length;
+  const okCount  = list.filter(v => v.isMatch).length;
+  const badCount = total - okCount;
+  const sumA = list.reduce((a, v) => a + v.totalA, 0);
+  const sumB = list.reduce((a, v) => a + v.totalB, 0);
+  const pctOk = total > 0 ? Math.round((okCount / total) * 100) : 0;
+
+  statsGrid.innerHTML = `
+    <div class="stat-card total">
+      <div class="lbl">Invoices in range</div>
+      <div class="val">${total.toLocaleString()}</div>
+      <div class="sub">${pctOk}% match rate</div>
+    </div>
+    <div class="stat-card ok">
+      <div class="lbl">✓ Correct</div>
+      <div class="val">${okCount.toLocaleString()}</div>
+      <div class="sub">totals match within ${TOLERANCE}</div>
+    </div>
+    <div class="stat-card bad">
+      <div class="lbl">✗ Incorrect</div>
+      <div class="val">${badCount.toLocaleString()}</div>
+      <div class="sub">needs review</div>
+    </div>
+    <div class="stat-card">
+      <div class="lbl">Custom-field total</div>
+      <div class="val" style="font-size:18px">${fmt(sumA)}</div>
+      <div class="sub">qty × rate + tax</div>
+    </div>
+    <div class="stat-card">
+      <div class="lbl">Standard total</div>
+      <div class="val" style="font-size:18px">${fmt(sumB)}</div>
+      <div class="sub">qty × unit price + tax</div>
+    </div>
+  `;
+
+  // Filter by view toggle
+  let shown = list;
+  if (view === 'ok')  shown = list.filter(v =>  v.isMatch);
+  if (view === 'bad') shown = list.filter(v => !v.isMatch);
+
+  tblTitle.textContent = view === 'bad' ? 'Mismatched invoices'
+                       : view === 'ok'  ? 'Matched invoices'
+                       : 'All invoices';
+
+  if (shown.length === 0) {
+    tblWrap.innerHTML = `
+      <div class="empty-state">
+        <div class="icon-big">🔍</div>
+        <h3>No invoices to show</h3>
+        <p>Try adjusting your filters or the view toggle.</p>
+      </div>`;
+    return;
+  }
+
+  // Sort newest first
+  const sorted = [...shown].sort((a, b) => {
+    const da = new Date(a.issueDate || 0).getTime();
+    const db = new Date(b.issueDate || 0).getTime();
+    return db - da;
+  });
+
+  const rows = sorted.map((v, idx) => {
+    const diffCls = v.isMatch ? 'ok' : 'bad';
+    const diffSign = v.diff > 0 ? '+' : '';
+    const badge = v.isMatch
+      ? '<span class="badge ok">✓ Correct</span>'
+      : '<span class="badge bad">✗ Incorrect</span>';
+
+    const linesHTML = v.lineResults.map(lr => `
+      <tr>
+        <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHTML(lr.desc)}">${escapeHTML(lr.desc)}</td>
+        <td class="num">${fmt(lr.customQty)}</td>
+        <td class="num">${fmt(lr.customRate)}</td>
+        <td class="num">${fmt(lr.totalA)}</td>
+        <td class="num">${fmt(lr.qty)}</td>
+        <td class="num">${fmt(lr.unitPrice)}</td>
+        <td class="num">${fmt(lr.totalB)}</td>
+        <td class="num diff-cell ${Math.abs(lr.diff) < TOLERANCE ? 'ok' : 'bad'}">${fmt(lr.diff)}</td>
+      </tr>
+    `).join('');
+
+    return `
+      <tr data-idx="${idx}">
+        <td>
+          <button class="expand-btn" data-expand="${idx}" aria-label="Expand lines">▸</button>
+        </td>
+        <td class="ref">${escapeHTML(v.reference)}</td>
+        <td class="date">${fmtDate(v.issueDate)}</td>
+        <td class="num">${fmt(v.totalA)}</td>
+        <td class="num">${fmt(v.totalB)}</td>
+        <td class="num diff-cell ${diffCls}">${diffSign}${fmt(v.diff)}</td>
+        <td>${badge}</td>
+      </tr>
+      <tr class="lines-row" id="lines-${idx}" style="display:none">
+        <td colspan="7">
+          <div class="lines-inner">
+            <div style="font-size:11px;color:#1d4ed8;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">
+              Line-item breakdown (${v.lineResults.length})
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Description</th>
+                  <th class="num">CF Qty</th>
+                  <th class="num">CF Rate</th>
+                  <th class="num">A: CF Total</th>
+                  <th class="num">Qty</th>
+                  <th class="num">Unit Price</th>
+                  <th class="num">B: Std Total</th>
+                  <th class="num">Diff</th>
+                </tr>
+              </thead>
+              <tbody>${linesHTML}</tbody>
+            </table>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  tblWrap.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th style="width:32px"></th>
+          <th>Reference</th>
+          <th>Issue date</th>
+          <th class="num">Custom total (A)</th>
+          <th class="num">Standard total (B)</th>
+          <th class="num">Difference</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+
+  // Wire up expand/collapse
+  tblWrap.querySelectorAll('.expand-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = btn.dataset.expand;
+      const row = document.getElementById('lines-' + idx);
+      if (!row) return;
+      const open = row.style.display !== 'none';
+      row.style.display = open ? 'none' : 'table-row';
+      btn.textContent = open ? '▸' : '▾';
+    });
+  });
+}
+
+/* Tiny HTML-escape helper for cell content coming from the API */
+function escapeHTML(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+</script>
+</body>
+</html>
